@@ -90,6 +90,7 @@ public abstract class TokenCompleteTextView extends MultiAutoCompleteTextView im
     private boolean savingState = false;
     private boolean shouldFocusNext = false;
     private boolean allowCollapse = true;
+    private int maxTokens = 1000;
 
     private void resetListeners() {
         //reset listeners that get discarded when you set text
@@ -120,8 +121,48 @@ public abstract class TokenCompleteTextView extends MultiAutoCompleteTextView im
 
             @Override
             public CharSequence filter(CharSequence source, int start, int end, Spanned dest, int dstart, int dend) {
-                //Detect single commas, remove them and complete the current token instead
-                if (source.length() == 1 && source.charAt(0) == ',') {
+                // Characters already in the input
+            	String text = getText().toString();
+            	
+            	// Character(s) just entered
+            	String input = source.toString();
+            	
+            	String allAllowedCharacters = ".*[^A-Za-z0-9 ,_].*";
+            	String validTag = "^#?[A-Za-z0-9]+[A-Za-z0-9_]+[^_]$";
+            	String removeChactersForCount = "[ ,_]";
+            	String removeChactersForValidity = "[ ,]";
+            	
+            	boolean containsInvalidCharacters = input.matches(allAllowedCharacters);
+            	
+            	String textWithoutSeperators = text.replaceAll(removeChactersForCount, "");
+            	String textWithoutCommaCrap = text.replaceAll(removeChactersForValidity, "");
+            	
+            	boolean isValidToken = textWithoutCommaCrap.matches(validTag);
+            	
+            	// Block invalid characters
+            	if (containsInvalidCharacters) {
+            		return "";
+            	
+            	// While commas are allowed they are a byproduct of the tokenization creating a ' , ' sequence.
+            	// Single commas are not allowed.
+            	// TODO: Test pasting the sequence ' , ' as it might get past filtering.
+            	} else if (source.length() == 1 && source.equals(",")) {
+            		Log.d(TAG,"Invalid character: single comma");
+            		return "";
+            		
+            	// Block spaces when the token is invalid
+            	} else if ( ( text == null || text.equals("") || !isValidToken ) && ( source.equals(" ") || ( source.length() == 1 && source.charAt(0) == ' ' ) ) ) {
+            		Log.d(TAG,"Invalid token: Token must be at least 3 characters, starting with a letter or number, and not ending with an underscore.");
+            		return "";
+            	
+            	// Limit the tokens to 20 characters
+            	} else if ( textWithoutSeperators.length()+1 > 20 && !input.equals(" ") && !input.equals(" , ") ) {
+            		Log.d(TAG,"Character limit is 20.");
+            		return "";
+            	}
+            	
+            	//Detect single spaces, remove them and complete the current token instead
+            	if (source.length() == 1 && source.charAt(0) == ' ') {
                     performCompletion();
                     return "";
                 }
@@ -597,9 +638,13 @@ public abstract class TokenCompleteTextView extends MultiAutoCompleteTextView im
 
         if (editable != null) {
             if (tokenSpan == null) {
-                editable.replace(start, end, " ");
+                editable.replace(start, end, "");
             } else if (!allowDuplicates && objects.contains(tokenSpan.getToken())) {
-                editable.replace(start, end, " ");
+                Log.d(TAG,"Duplicate token.");
+                editable.replace(start, end, "");
+            } else if (objects.size() >= maxTokens) {
+            	Log.d(TAG,"Already have "+maxTokens+" tokens. Cannot add more.");
+            	editable.replace(start, end, "");
             } else {
                 QwertyKeyListener.markAsReplaced(editable, start, end, original);
                 editable.replace(start, end, ssb);
@@ -970,6 +1015,18 @@ public abstract class TokenCompleteTextView extends MultiAutoCompleteTextView im
         @Override
         public void onTextChanged(CharSequence s, int start, int before, int count) {
             System.out.println("changing text: " + s);
+            
+            
+            // If the only two characters left are ' ,' then remove them.
+            if (s.length()==2) {
+            	if (s.charAt(s.length()-1) == ',' && s.charAt(s.length()-2) == ' ') {
+            		s = s.subSequence(0, s.length()-2);
+            		setText(s);
+            		setSelection(s.length());
+            		return;
+            	}
+            }
+            
             Editable text = getText();
             if (text == null)
                 return;
